@@ -1,6 +1,4 @@
-import asyncio
-from datetime import datetime, date, timedelta
-import re
+from datetime import datetime, date
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -318,7 +316,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     voice = update.message.voice
     file = await context.bot.get_file(voice.file_id)
-    file_url = file.file_path
+    file_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file.file_path}"
     
     await update.message.reply_text("🎤 Processing...")
     

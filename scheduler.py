@@ -74,11 +74,11 @@ async def send_sunday_preview(bot):
     """Send week-ahead preview on Sunday evening."""
     users = get_all_users()  # Include OOO users for planning
     
-    # Calculate Monday to Friday of upcoming week
+    # Calculate Monday to Friday of upcoming week (Sunday -> next day is Monday)
     today = date.today()
     days_until_monday = (7 - today.weekday()) % 7
     if days_until_monday == 0:
-        days_until_monday = 7
+        days_until_monday = 1  # Sunday: Monday is tomorrow
     monday = today + timedelta(days=days_until_monday)
     friday = monday + timedelta(days=4)
     
