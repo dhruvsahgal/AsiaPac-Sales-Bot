@@ -2,6 +2,13 @@ from supabase import create_client
 from config import SUPABASE_URL, SUPABASE_KEY
 from datetime import date, datetime
 
+# Debug: print what we're getting (masked)
+print(f"SUPABASE_URL: {SUPABASE_URL[:20] if SUPABASE_URL else 'NOT SET'}...")
+print(f"SUPABASE_KEY: {SUPABASE_KEY[:20] if SUPABASE_KEY else 'NOT SET'}...")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise Exception("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
+
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
