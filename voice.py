@@ -31,24 +31,34 @@ async def transcribe_voice(file_url: str, bot_token: str) -> str:
         os.unlink(tmp_path)
 
 
-def parse_intent_with_llm(text: str) -> dict | None:
+def parse_intent_with_llm(text: str, today_date: str) -> dict | None:
     """Use Groq LLM to parse natural language into structured intent."""
     prompt = f"""Parse this sales note into a JSON action. Return ONLY valid JSON, no other text.
+
+Today's date: {today_date} (use this to calculate any relative dates)
 
 Input: "{text}"
 
 Possible actions:
-1. add_lead: {{"action": "add_lead", "name": "person name", "company": "company name", "next_steps": "what to do next"}}
-2. update_lead: {{"action": "update_lead", "name": "person name", "next_steps": "new status/next steps"}}
-3. done_lead: {{"action": "done_lead", "name": "person name", "status": "won" or "lost"}}
+1. add_lead: {{"action": "add_lead", "name": "person name", "company": "company name", "next_steps": "what to do next", "follow_up_date": "YYYY-MM-DD or null"}}
+2. update_lead: {{"action": "update_lead", "name": "person or company name", "next_steps": "new status/next steps", "follow_up_date": "YYYY-MM-DD or null"}}
+3. done_lead: {{"action": "done_lead", "name": "person or company name", "status": "won" or "lost"}}
 4. list_leads: {{"action": "list_leads"}}
 5. unknown: {{"action": "unknown"}}
 
 Rules:
 - For add_lead: extract name (person), company, and what needs to be done
-- If company is unclear, use the most likely company name mentioned
-- If no clear action, return unknown
-- The name should be the contact person, not the company
+- If only a company name is mentioned without a person, use "Contact" as the name
+- If company is unclear, use the most likely company/organization name mentioned
+- Convert relative dates to actual YYYY-MM-DD format:
+  - "Monday" = next Monday from today
+  - "next week" = Monday of next week
+  - "tomorrow" = tomorrow's date
+  - "in 3 days" = 3 days from today
+  - "end of week" = this Friday
+  - "next month" = 1st of next month
+- If no date/time mentioned, set follow_up_date to null
+- The name field can be a person name OR company name - whatever helps identify the lead
 
 JSON response:"""
 
@@ -65,6 +75,7 @@ JSON response:"""
             result = result.split("```")[1]
             if result.startswith("json"):
                 result = result[4:]
+        result = result.strip()
         return json.loads(result)
     except Exception as e:
         print(f"LLM parse error: {e}")

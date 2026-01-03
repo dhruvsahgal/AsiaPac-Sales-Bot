@@ -333,8 +333,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(f"Heard: \"{text}\"")
     
-    # Use LLM to parse intent
-    intent = parse_intent_with_llm(text)
+    # Use LLM to parse intent (pass today's date for relative date calculation)
+    today_str = date.today().strftime("%Y-%m-%d (%A)")  # e.g., "2026-01-03 (Saturday)"
+    intent = parse_intent_with_llm(text, today_str)
     print(f"Parsed intent: {intent}")
     
     if not intent or intent.get("action") == "unknown":
@@ -353,15 +354,24 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         name = intent.get("name", "Unknown")
         company = intent.get("company", "Unknown")
         next_steps = intent.get("next_steps", "Follow up")
+        follow_up_date = intent.get("follow_up_date")
         
-        lead = add_lead(user["id"], name, company, next_steps)
-        await update.message.reply_text(
-            f"Added lead:\n"
-            f"  Name: {name}\n"
-            f"  Company: {company}\n"
-            f"  Next: {next_steps}\n\n"
-            f"Set follow-up with: /update {lead['id']} follow_up YYYY-MM-DD"
-        )
+        # Parse follow_up_date if provided
+        follow_up = None
+        if follow_up_date and follow_up_date != "null":
+            try:
+                follow_up = datetime.strptime(follow_up_date, "%Y-%m-%d").date()
+            except ValueError:
+                print(f"Could not parse follow_up_date: {follow_up_date}")
+        
+        lead = add_lead(user["id"], name, company, next_steps, follow_up)
+        
+        msg = f"Added lead:\n  Name: {name}\n  Company: {company}\n  Next: {next_steps}"
+        if follow_up:
+            msg += f"\n  Follow-up: {follow_up.strftime('%A, %b %d')}"
+        else:
+            msg += f"\n\nSet follow-up with: /update {lead['id']} follow_up YYYY-MM-DD"
+        await update.message.reply_text(msg)
     
     elif action == "list_leads":
         leads = get_leads(user["id"], status="active")
@@ -376,17 +386,40 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif action == "update_lead":
         name = intent.get("name", "")
         next_steps = intent.get("next_steps", "")
+        follow_up_date = intent.get("follow_up_date")
         
         if not name:
             await update.message.reply_text("Couldn't determine which lead to update.")
             return
+        
+        # Parse follow_up_date if provided
+        follow_up = None
+        if follow_up_date and follow_up_date != "null":
+            try:
+                follow_up = datetime.strptime(follow_up_date, "%Y-%m-%d").date()
+            except ValueError:
+                print(f"Could not parse follow_up_date: {follow_up_date}")
             
         leads = get_leads(user["id"], status="active")
         matching = [l for l in leads if name.lower() in l["name"].lower() or name.lower() in l["company"].lower()]
         
         if len(matching) == 1:
-            update_lead(matching[0]["id"], next_steps=next_steps)
-            await update.message.reply_text(f"Updated {matching[0]['name']}: {next_steps}")
+            updates = {}
+            if next_steps:
+                updates["next_steps"] = next_steps
+            if follow_up:
+                updates["follow_up_date"] = follow_up
+            
+            if updates:
+                update_lead(matching[0]["id"], **updates)
+                msg = f"Updated {matching[0]['name']} ({matching[0]['company']}):"
+                if next_steps:
+                    msg += f"\n  Next: {next_steps}"
+                if follow_up:
+                    msg += f"\n  Follow-up: {follow_up.strftime('%A, %b %d')}"
+                await update.message.reply_text(msg)
+            else:
+                await update.message.reply_text("Nothing to update.")
         elif len(matching) > 1:
             msg = "Multiple leads match. Which one?\n"
             for l in matching:
