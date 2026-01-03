@@ -59,12 +59,14 @@ async def continue_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     
+    print(f"Continue pressed by {query.from_user.id}, moving to AWAITING_NAME")
     await query.edit_message_text("What's your name?")
     return AWAITING_NAME
 
 
 async def receive_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Receive name and complete registration."""
+    print(f"receive_name called with: {update.message.text}")
     name = update.message.text.strip()
     
     if len(name) < 2 or len(name) > 50:
@@ -414,9 +416,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle plain text that isn't a command."""
+    print(f"handle_text called with: {update.message.text}")
     user = get_user(update.effective_user.id)
     if not user:
-        # Might be name input during onboarding
+        # Might be name input during onboarding - let ConversationHandler handle it
+        print("User not found, ignoring in handle_text")
         return
     
     text = update.message.text
