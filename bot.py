@@ -318,8 +318,14 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     voice = update.message.voice
     file = await context.bot.get_file(voice.file_id)
-    file_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file.file_path}"
     
+    # file.file_path might be full URL or relative path
+    if file.file_path.startswith("http"):
+        file_url = file.file_path
+    else:
+        file_url = f"https://api.telegram.org/file/bot{TELEGRAM_BOT_TOKEN}/{file.file_path}"
+    
+    print(f"Voice file URL: {file_url}")
     await update.message.reply_text("🎤 Processing...")
     
     try:
