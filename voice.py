@@ -1,6 +1,7 @@
 import httpx
 import tempfile
 import os
+import json
 from groq import Groq
 from config import GROQ_API_KEY
 
@@ -28,6 +29,46 @@ async def transcribe_voice(file_url: str, bot_token: str) -> str:
         return transcription.text
     finally:
         os.unlink(tmp_path)
+
+
+def parse_intent_with_llm(text: str) -> dict | None:
+    """Use Groq LLM to parse natural language into structured intent."""
+    prompt = f"""Parse this sales note into a JSON action. Return ONLY valid JSON, no other text.
+
+Input: "{text}"
+
+Possible actions:
+1. add_lead: {{"action": "add_lead", "name": "person name", "company": "company name", "next_steps": "what to do next"}}
+2. update_lead: {{"action": "update_lead", "name": "person name", "next_steps": "new status/next steps"}}
+3. done_lead: {{"action": "done_lead", "name": "person name", "status": "won" or "lost"}}
+4. list_leads: {{"action": "list_leads"}}
+5. unknown: {{"action": "unknown"}}
+
+Rules:
+- For add_lead: extract name (person), company, and what needs to be done
+- If company is unclear, use the most likely company name mentioned
+- If no clear action, return unknown
+- The name should be the contact person, not the company
+
+JSON response:"""
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=200
+        )
+        result = response.choices[0].message.content.strip()
+        # Clean up response - remove markdown if present
+        if result.startswith("```"):
+            result = result.split("```")[1]
+            if result.startswith("json"):
+                result = result[4:]
+        return json.loads(result)
+    except Exception as e:
+        print(f"LLM parse error: {e}")
+        return None
 
 
 def parse_lead_from_text(text: str) -> dict | None:

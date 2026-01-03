@@ -11,10 +11,7 @@ from database import (
     get_user, create_user, set_ooo, add_lead, get_leads, 
     update_lead, get_lead_by_id, get_leads_due_today, get_overdue_leads
 )
-from voice import (
-    transcribe_voice, parse_lead_from_text, parse_update_from_text,
-    parse_done_from_text, parse_ooo_from_text
-)
+from voice import transcribe_voice, parse_intent_with_llm
 from scheduler import setup_scheduler
 
 # Conversation states
@@ -336,88 +333,92 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(f"Heard: \"{text}\"")
     
-    # Try to parse intent
-    text_lower = text.lower()
+    # Use LLM to parse intent
+    intent = parse_intent_with_llm(text)
+    print(f"Parsed intent: {intent}")
     
-    # Check for "show leads" / "my leads"
-    if any(phrase in text_lower for phrase in ["show", "my leads", "list leads", "what leads"]):
+    if not intent or intent.get("action") == "unknown":
+        await update.message.reply_text(
+            "I didn't understand that. Try saying something like:\n"
+            "• 'Add lead John at Acme, need to send proposal'\n"
+            "• 'Show my leads'\n"
+            "• 'Done with John'\n"
+            "• 'Update John - meeting scheduled'"
+        )
+        return
+    
+    action = intent.get("action")
+    
+    if action == "add_lead":
+        name = intent.get("name", "Unknown")
+        company = intent.get("company", "Unknown")
+        next_steps = intent.get("next_steps", "Follow up")
+        
+        lead = add_lead(user["id"], name, company, next_steps)
+        await update.message.reply_text(
+            f"Added lead:\n"
+            f"  Name: {name}\n"
+            f"  Company: {company}\n"
+            f"  Next: {next_steps}\n\n"
+            f"Set follow-up with: /update {lead['id']} follow_up YYYY-MM-DD"
+        )
+    
+    elif action == "list_leads":
         leads = get_leads(user["id"], status="active")
         if not leads:
             await update.message.reply_text("No active leads.")
         else:
             msg = f"Your leads ({len(leads)}):\n"
             for lead in leads:
-                msg += f"  • {lead['name']} ({lead['company']}) - {lead['next_steps']}\n"
+                msg += f"  • #{lead['id']} {lead['name']} ({lead['company']}) - {lead['next_steps']}\n"
             await update.message.reply_text(msg)
-        return
     
-    # Check for add lead
-    lead_data = parse_lead_from_text(text)
-    if lead_data:
-        lead = add_lead(user["id"], lead_data["name"], lead_data["company"], lead_data["next_steps"])
-        await update.message.reply_text(
-            f"Added lead:\n"
-            f"  Name: {lead_data['name']}\n"
-            f"  Company: {lead_data['company']}\n"
-            f"  Next: {lead_data['next_steps']}\n\n"
-            f"Set follow-up with: /update {lead['id']} follow_up YYYY-MM-DD"
-        )
-        return
-    
-    # Check for done/complete
-    done_name = parse_done_from_text(text)
-    if done_name:
+    elif action == "update_lead":
+        name = intent.get("name", "")
+        next_steps = intent.get("next_steps", "")
+        
+        if not name:
+            await update.message.reply_text("Couldn't determine which lead to update.")
+            return
+            
         leads = get_leads(user["id"], status="active")
-        matching = [l for l in leads if done_name.lower() in l["name"].lower()]
+        matching = [l for l in leads if name.lower() in l["name"].lower() or name.lower() in l["company"].lower()]
         
         if len(matching) == 1:
-            status = "won" if "won" in text_lower else "lost" if "lost" in text_lower else "won"
-            update_lead(matching[0]["id"], status=status)
-            await update.message.reply_text(f"Marked {matching[0]['name']} as {status.upper()}!")
+            update_lead(matching[0]["id"], next_steps=next_steps)
+            await update.message.reply_text(f"Updated {matching[0]['name']}: {next_steps}")
         elif len(matching) > 1:
-            msg = "Multiple matches found:\n"
+            msg = "Multiple leads match. Which one?\n"
             for l in matching:
                 msg += f"  #{l['id']} {l['name']} ({l['company']})\n"
-            msg += "\nUse: /done ID"
+            msg += "\nUse: /update ID next_steps ..."
             await update.message.reply_text(msg)
         else:
-            await update.message.reply_text(f"No lead found matching '{done_name}'")
-        return
+            await update.message.reply_text(f"No lead found matching '{name}'")
     
-    # Check for update
-    update_data = parse_update_from_text(text)
-    if update_data:
-        leads = get_leads(user["id"], status="active")
-        matching = [l for l in leads if update_data["name"].lower() in l["name"].lower()]
+    elif action == "done_lead":
+        name = intent.get("name", "")
+        status = intent.get("status", "won")
         
-        if len(matching) == 1 and update_data.get("next_steps"):
-            update_lead(matching[0]["id"], next_steps=update_data["next_steps"])
-            await update.message.reply_text(f"Updated {matching[0]['name']}: {update_data['next_steps']}")
-        elif len(matching) > 1:
-            await update.message.reply_text("Multiple leads match. Use /update ID next_steps ...")
-        else:
-            await update.message.reply_text("Couldn't find that lead or parse the update.")
-        return
-    
-    # Check for OOO
-    if "out" in text_lower or "ooo" in text_lower or "office" in text_lower:
-        ooo_date_str = parse_ooo_from_text(text)
-        if ooo_date_str:
-            await update.message.reply_text(
-                f"To set OOO, use: /ooo YYYY-MM-DD\n"
-                f"(I heard: '{ooo_date_str}' but need exact date format)"
-            )
+        if not name:
+            await update.message.reply_text("Couldn't determine which lead to mark done.")
             return
-    
-    # Fallback
-    await update.message.reply_text(
-        "I didn't understand that. Try:\n"
-        "• 'Add lead John at Acme, need to send proposal'\n"
-        "• 'Show my leads'\n"
-        "• 'Done with John'\n"
-        "• 'Update John - meeting scheduled'\n\n"
-        "Or type /help for all commands."
-    )
+            
+        leads = get_leads(user["id"], status="active")
+        matching = [l for l in leads if name.lower() in l["name"].lower() or name.lower() in l["company"].lower()]
+        
+        if len(matching) == 1:
+            update_lead(matching[0]["id"], status=status)
+            emoji = "🎉" if status == "won" else ""
+            await update.message.reply_text(f"Marked {matching[0]['name']} as {status.upper()}! {emoji}")
+        elif len(matching) > 1:
+            msg = "Multiple leads match. Which one?\n"
+            for l in matching:
+                msg += f"  #{l['id']} {l['name']} ({l['company']})\n"
+            msg += "\nUse: /done ID [won|lost]"
+            await update.message.reply_text(msg)
+        else:
+            await update.message.reply_text(f"No lead found matching '{name}'")
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -429,29 +430,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("User not found, ignoring in handle_text")
         return
     
-    text = update.message.text
-    
-    # Try same parsing as voice
-    text_lower = text.lower()
-    
-    if any(phrase in text_lower for phrase in ["show", "my leads", "list"]):
-        leads = get_leads(user["id"], status="active")
-        if not leads:
-            await update.message.reply_text("No active leads.")
-        else:
-            msg = f"Your leads ({len(leads)}):\n"
-            for lead in leads:
-                msg += f"  • #{lead['id']} {lead['name']} ({lead['company']})\n"
-            await update.message.reply_text(msg)
-        return
-    
-    lead_data = parse_lead_from_text(text)
-    if lead_data:
-        lead = add_lead(user["id"], lead_data["name"], lead_data["company"], lead_data["next_steps"])
-        await update.message.reply_text(f"Added: {lead_data['name']} at {lead_data['company']}")
-        return
-    
-    await update.message.reply_text("Type /help to see what I can do.")
+    await update.message.reply_text("Type /help to see what I can do, or send a voice note.")
 
 
 def main():
