@@ -20,6 +20,7 @@ from voice import (
 from scheduler import setup_scheduler
 
 # Conversation states
+AWAITING_CONTINUE = 0
 AWAITING_NAME = 1
 
 WELCOME_MESSAGE = """Welcome to the AsiaPac Sales Bot!
@@ -52,7 +53,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(WELCOME_MESSAGE, reply_markup=reply_markup)
-    return ConversationHandler.END
+    return AWAITING_CONTINUE
 
 
 async def continue_onboarding(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -453,13 +454,11 @@ def main():
     onboarding_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
+            AWAITING_CONTINUE: [CallbackQueryHandler(continue_onboarding, pattern="^continue_onboarding$")],
             AWAITING_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_name)],
         },
         fallbacks=[CommandHandler("start", start)],
     )
-    
-    # Add callback handler for continue button (outside conversation)
-    application.add_handler(CallbackQueryHandler(continue_onboarding, pattern="^continue_onboarding$"))
     
     # Register handlers
     application.add_handler(onboarding_handler)
