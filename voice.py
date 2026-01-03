@@ -1,4 +1,6 @@
 import httpx
+import tempfile
+import os
 from groq import Groq
 from config import GROQ_API_KEY
 
@@ -11,12 +13,21 @@ async def transcribe_voice(file_url: str, bot_token: str) -> str:
         response = await http_client.get(file_url)
         audio_data = response.content
 
-    transcription = client.audio.transcriptions.create(
-        file=("voice.ogg", audio_data),
-        model="whisper-large-v3",
-        language="en"
-    )
-    return transcription.text
+    # Write to temp file - Groq needs a proper file
+    with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+        tmp.write(audio_data)
+        tmp_path = tmp.name
+    
+    try:
+        with open(tmp_path, "rb") as audio_file:
+            transcription = client.audio.transcriptions.create(
+                file=audio_file,
+                model="whisper-large-v3",
+                language="en"
+            )
+        return transcription.text
+    finally:
+        os.unlink(tmp_path)
 
 
 def parse_lead_from_text(text: str) -> dict | None:
