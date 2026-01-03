@@ -1,0 +1,19 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+TIMEZONE = "Asia/Singapore"
+
+# Digest times (24h format)
+MORNING_DIGEST_HOUR = 8
+MORNING_DIGEST_MINUTE = 30
+EVENING_DIGEST_HOUR = 17
+EVENING_DIGEST_MINUTE = 30
+SUNDAY_PREVIEW_HOUR = 20
+SUNDAY_PREVIEW_MINUTE = 0
